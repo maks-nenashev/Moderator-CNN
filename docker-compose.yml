@@ -1,0 +1,9 @@
+services:
+  moderator:
+    build: .
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./weights:/app/weights
+      - ./data:/app/data
+    restart: always

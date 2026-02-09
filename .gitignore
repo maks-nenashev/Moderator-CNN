@@ -1,0 +1,14 @@
+# Data (Datasets)
+data/
+data/train/
+data/val/
+data/test/
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Model Weights
+weights/*.pth
