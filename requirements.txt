@@ -5,3 +5,7 @@ uvicorn
 pillow
 python-multipart
 numpy
+insightface==0.7.3
+onnxruntime==1.16.3
+opencv-python-headless
+numpy==1.24.3
