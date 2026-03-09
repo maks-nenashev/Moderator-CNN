@@ -12,3 +12,6 @@ venv/
 
 # Model Weights
 weights/*.pth
+weights/
+*.onnx
+*.zip
