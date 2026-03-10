@@ -1,53 +1,45 @@
 import cv2
 import numpy as np
+from pathlib import Path
 from insightface.app import FaceAnalysis
+
+# Путь к твоим весам
+BASE_DIR = Path(__file__).resolve().parent.parent
+WEIGHTS_DIR = BASE_DIR / "weights"
 
 class FaceEngine:
     def __init__(self):
-        # Используем Buffalo_L — тяжелая, но точная модель для CPU
-        self.app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
-        # det_thresh=0.4 — повышаем чувствительность "зрения"
+        # 1. Меняем L на S (Light), так как на диске сейчас S
+        # 2. Указываем root, чтобы не качало в ~/.insightface
+        # 3. intra_op_num_threads=2 — Risk Control для твоего i5
+        self.app = FaceAnalysis(
+            name='buffalo_s', 
+            root=str(WEIGHTS_DIR), 
+            providers=['CPUExecutionProvider'],
+            provider_options=[{'intra_op_num_threads': 2}]
+        )
         self.app.prepare(ctx_id=-1, det_size=(640, 640))
+        print("✅ [ENGINE] Synchronized with buffalo_s. Ready.")
 
     def extract_from_bytes(self, image_bytes):
-        """Метод для работы напрямую с потоком из Rails"""
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if img is None:
-            print("🛑 [ENGINE] Decode failed: Received empty or corrupt buffer")
-            return []
-            
-        return self._process(img)
-
-    def extract_anchor_vector(self, img_path):
-        """Метод для тестов через локальные пути"""
-        img = cv2.imread(str(img_path))
-        if img is None:
-            print(f"🛑 [ENGINE] File not found: {img_path}")
-            return []
+        if img is None: return []
         return self._process(img)
 
     def _process(self, img):
-        """Единая логика инференса и сборки вектора"""
-        # Снижаем det_thresh динамически, если нужно "дожать" результат
         faces = self.app.get(img)
-        
-        print(f"📸 [ENGINE] Image {img.shape[1]}x{img.shape[0]} | Detected: {len(faces)} faces")
-        
         results = []
         for face in faces:
-            # ArcFace выдает 512-d вектор
-            arc_emb = face.embedding 
+            arc_emb = face.embedding # Это 512-d
             
-            # Добиваем до 1250-d (как в твоем Job), чтобы сохранить архитектурное единство
-            # 1250 - 512 = 738 нулей
+            # Твоя математика: 512 + 738 = 1250
             padding = np.zeros(738)
             combined = np.concatenate([arc_emb, padding])
             
             results.append({
                 "bbox": face.bbox.astype(int).tolist(),
-                "embedding": combined.tolist(),
+                "embedding": combined.tolist(), # Строго 1250-d
                 "conf": float(face.det_score)
             })
         return results
