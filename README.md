@@ -125,7 +125,7 @@ policy-controlled automation.
 
 ![Architecture Diagram](architectura_ai.png)
 
-operational transparency,
+Operational transparency,
 safer deployment,
 adaptive moderation behavior,
 production-grade infrastructure stability.
