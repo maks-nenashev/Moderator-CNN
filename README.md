@@ -1,5 +1,6 @@
 CNN Moderation & Humanitarian Visual Matching System
 Visual Safety Through Distributed AI Infrastructure
+https://nenashev.net/en/portfolio
 
 FindWay uses a multi-layer computer vision architecture designed for scalable visual safety analysis, embedding-based similarity search, and humanitarian coordination workflows.
 ![Architecture Diagram](cnn_moderator_2.png)
