@@ -1,6 +1,7 @@
 CNN Moderation & Biometric Recognition System
 Visual Safety Through Distributed AI Moderation
 
+![Architecture Diagram](architectura_ai.png)
 FindWay uses a multi-layer computer vision pipeline designed for real-world moderation, biometric matching, and humanitarian search operations.
 
 The system combines lightweight CNN moderation models with vector-based biometric recognition to provide scalable, real-time analysis of user-generated visual content.
