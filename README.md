@@ -1,133 +1,133 @@
-CNN Moderation & Biometric Recognition System
-Visual Safety Through Distributed AI Moderation
+
 
 ![Architecture Diagram](architectura_ai.png)
-FindWay uses a multi-layer computer vision pipeline designed for real-world moderation, biometric matching, and humanitarian search operations.
+CNN Moderation & Humanitarian Visual Matching System
+Visual Safety Through Distributed AI Infrastructure
 
-The system combines lightweight CNN moderation models with vector-based biometric recognition to provide scalable, real-time analysis of user-generated visual content.
+FindWay uses a multi-layer computer vision architecture designed for scalable visual safety analysis, embedding-based similarity search, and humanitarian coordination workflows.
 
-Unlike traditional moderation systems focused only on content blocking, the architecture was designed around two simultaneous goals:
+The platform combines lightweight CNN moderation models with vector-based visual matching pipelines to support:
 
-maintaining platform safety
-accelerating humanitarian search and identification processes
+platform safety,
+real-time media analysis,
+humanitarian search operations,
+missing person coordination.
+
+Unlike traditional moderation systems focused exclusively on content filtering, the architecture was designed around two simultaneous objectives:
+
+maintaining a safe communication environment,
+accelerating humanitarian identification workflows through explainable AI infrastructure.
 Layer 1 — CNN Safety Shield
 
-For image moderation and visual analysis, the platform uses Convolutional Neural Network (CNN) models optimized for high-speed inference and scalable deployment.
+The visual safety layer is powered by optimized Convolutional Neural Network (CNN) models designed for:
 
-At the core of the moderation pipeline is:
+low-latency inference,
+distributed deployment,
+asynchronous processing pipelines,
+scalable moderation operations.
+
+Core moderation model:
 
 EfficientNet-B0
 
-The model is responsible for detecting and automatically flagging or blocking:
+The model performs automated detection of:
 
-NSFW imagery
-explicit content
-violent material
-abusive visual content
-harmful media patterns
+NSFW imagery,
+explicit visual material,
+violent content,
+abusive media patterns,
+unsafe uploads.
 
-The moderation layer operates in real time and is integrated directly into the asynchronous processing infrastructure of FindWay.
+The moderation layer operates in real time and integrates directly into FindWay’s distributed asynchronous infrastructure.
 
-The primary design goals are:
+Primary engineering goals:
 
-low inference latency
-scalable deployment
-stable production behavior
-reduced moderation overhead
-Layer 2 — Biometric Memory & Face Recognition
+minimal inference latency,
+production stability,
+scalable deployment,
+reduced moderation overhead.
+Layer 2 — Humanitarian Visual Matching
 
-To support missing person identification and humanitarian search workflows, FindWay integrates a biometric recognition subsystem based on:
+To support humanitarian search workflows, FindWay integrates an embedding-based visual similarity subsystem built around:
 
-ArcFace
-vector embeddings
-similarity search infrastructure
+ArcFace embedding generation,
+vector similarity search,
+pgvector infrastructure,
+nearest-neighbor retrieval pipelines.
 
-The system transforms detected faces into high-dimensional vector embeddings and stores them inside a continuously growing searchable memory space.
+Instead of storing semantic identity information directly, the system transforms uploaded facial regions into high-dimensional mathematical vector representations optimized for similarity comparison.
 
-Biometric Processing Flow
-Face Encoding
+Visual Processing Flow
+Embedding Generation
 
-Uploaded face images are converted into:
+Uploaded images are transformed into:
 
-512-dimensional vector representations
+512-dimensional vector embeddings
 
-using ArcFace embedding generation.
+using ArcFace-based feature extraction.
 
-Vector Memory Storage
+Vector Similarity Infrastructure
 
-Generated embeddings are stored in:
+Generated embeddings are stored inside:
 
-pgvector-powered similarity infrastructure
+pgvector-powered vector search infrastructure
 
-allowing scalable nearest-neighbor search operations across large image collections.
+allowing scalable nearest-neighbor comparison across large image collections.
 
-Similarity Matching
+Similarity Analysis
 
-When a newly uploaded image produces a vector sufficiently close to an existing embedding:
+When a newly generated embedding produces a sufficiently close mathematical similarity score relative to an existing search case:
 
-the system identifies a potential biometric match
-calculates similarity confidence
-triggers automated response workflows
-Automated Match Notification System
+the system identifies a potential visual correlation,
+calculates similarity confidence,
+triggers automated coordination workflows.
+Automated Humanitarian Coordination
 
-If a possible match is detected between:
+If a possible similarity event is detected between:
 
-a newly uploaded image
-and an existing search case
+a newly uploaded report,
+and an existing humanitarian search case,
 
-the platform automatically generates notifications inside the user's personal account.
+the platform automatically generates internal notifications for authorized participants.
 
-This allows:
+This supports:
 
-faster response coordination
-accelerated missing person detection
-real-time humanitarian communication
+accelerated coordination,
+faster response workflows,
+real-time humanitarian communication,
+reduced search latency.
+Production Infrastructure
 
-The notification pipeline significantly reduces the time required to identify possible connections between independent reports.
+The system operates on distributed asynchronous infrastructure built around:
 
-Designed for Production Infrastructure
+Rails orchestration,
+Docker deployment,
+AWS S3 object storage,
+Hetzner cloud infrastructure,
+scalable processing queues,
+asynchronous AI workers.
 
-The CNN moderation and biometric systems are integrated into a distributed infrastructure built around:
+The architecture was intentionally designed for:
 
-asynchronous AI services
-Rails orchestration
-Docker-based deployment
-AWS S3 object storage
-Hetzner cloud infrastructure
-scalable processing queues
+high-load environments,
+concurrent inference operations,
+large-scale media uploads,
+real-time moderation requirements.
+Explainable AI Infrastructure
 
-The architecture was intentionally designed to remain operational under:
+FindWay avoids opaque “black-box” moderation logic.
 
-high-load environments
-large-scale media uploads
-concurrent inference operations
-real-time moderation requirements
-Humanitarian-Centered AI
+Instead, the platform is built around:
 
-FindWay was not designed as a generic moderation platform.
+explainable processing pipelines,
+threshold-based risk calibration,
+modular CNN systems,
+observable infrastructure,
+policy-controlled automation.
 
-The system was created to support real-world humanitarian coordination scenarios involving:
+This enables:
 
-missing persons
-displaced individuals
-emergency response
-lost animals
-cross-border search collaboration
-
-The core mission of the platform is simple:
-
-reduce the pain of uncertainty, shorten search time, and strengthen coordinated human response through scalable AI systems.
-
-Safety Through Explainable Infrastructure
-
-The platform avoids “black-box AI” decision making.
-
-Instead, moderation and biometric matching are built around:
-
-explainable pipelines
-threshold-based risk logic
-modular CNN systems
-observable infrastructure
-policy-controlled automation
-
-This enables safer deployment, operational transparency, and adaptive moderation behavior in live production environments.
+operational transparency,
+safer deployment,
+adaptive moderation behavior,
+production-grade infrastructure stability.
