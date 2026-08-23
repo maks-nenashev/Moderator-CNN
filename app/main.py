@@ -9,23 +9,19 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 
-# 1. Создание экземпляра FastAPI
 app = FastAPI(title="FindWay Master AI Engine", version="1.3.0")
-
-# 2. Подключение роутеров (после инициализации app)
-from app.api.v1.endpoints.biometrics import router as dog_biometrics_router
-
-app.include_router(
-    dog_biometrics_router, prefix="/api/v1", tags=["Dog Biometrics"]
-)
 
 # --- Настройки путей ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 WEIGHTS_DIR = BASE_DIR / "weights"
+MODELS_DIR = BASE_DIR / "models"
+
+MODERATOR_WEIGHTS = MODELS_DIR / "dog" / "moderator_v1.pth"
+DOG_YOLO_WEIGHTS = MODELS_DIR / "dog" / "dog_yolo_dual.pt"
+DOG_EMBEDDER_WEIGHTS = MODELS_DIR / "dog" / "arcface_v1.pth"
 
 # --- Блок 1: Модерация (EfficientNet) ---
 CLASSES = ["explicit", "safe", "violence"]
-MODERATOR_WEIGHTS = WEIGHTS_DIR / "moderator_v1.pth"
 
 model = models.efficientnet_b0()
 num_ftrs = model.classifier[1].in_features
@@ -34,7 +30,14 @@ model.classifier[1] = nn.Linear(num_ftrs, len(CLASSES))
 if MODERATOR_WEIGHTS.exists():
   model.load_state_dict(torch.load(MODERATOR_WEIGHTS, map_location="cpu"))
   model.eval()
-  print("✅ Moderator: Activated")
+  print(f"✅ Moderator Model SUCCESS: Loaded from {MODERATOR_WEIGHTS}")
+else:
+  print(
+      f"❌ CRITICAL ERROR: Moderator weights NOT FOUND at {MODERATOR_WEIGHTS}"
+  )
+  raise RuntimeError(
+      f"Cannot start Moderator without weights: {MODERATOR_WEIGHTS}"
+  )
 
 # --- Блок 2: Человеческая биометрия (InsightFace) ---
 try:
@@ -47,6 +50,26 @@ try:
   print("✅ Face Engine: Activated (Threshold: 0.4)")
 except Exception as e:
   print(f"❌ Face Engine Error: {e}")
+
+# --- Блок 3: Собачья биометрия (YOLO + Embedder ArcFace) ---
+dog_service = None
+try:
+  from app.services.dog_biometrics_service import DogBiometricsService
+
+  dog_service = DogBiometricsService(
+      embedder_weights_path=str(DOG_EMBEDDER_WEIGHTS),
+      yolo_weights_path=str(DOG_YOLO_WEIGHTS),
+  )
+  print("✅ Dog Biometrics Engine: Activated (ArcFace ResNet34)")
+except Exception as e:
+  print(f"❌ Dog Biometrics Engine Error: {e}")
+
+# --- Подключение роутеров ---
+from app.api.v1.endpoints.biometrics import router as dog_biometrics_router
+
+app.include_router(
+    dog_biometrics_router, prefix="/api/v1", tags=["Dog Biometrics"]
+)
 
 preprocess = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -73,8 +96,8 @@ async def moderate_image(file: UploadFile = File(...)):
       probs = torch.nn.functional.softmax(outputs[0], dim=0)
       confidence, class_idx = torch.max(probs, 0)
 
-    verdict = CLASSES[class_idx]
-    conf_value = float(confidence)
+    verdict = CLASSES[class_idx.item()]
+    conf_value = float(confidence.item())
 
     status = "allowed"
     if verdict != "safe":
@@ -101,13 +124,16 @@ async def recognize_faces(file: UploadFile = File(...)):
     nparr = np.frombuffer(image_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
+    if img is None:
+      raise ValueError("Invalid or corrupted image format")
+
     faces = face_app.get(img)
     results = []
     for face in faces:
       results.append({
           "bbox": face.bbox.astype(int).tolist(),
           "conf": round(float(face.det_score), 4),
-          "embedding": face.embedding.tolist(),
+          "embedding": face.embedding.astype(float).tolist(),
       })
 
     print(f"👤 [AI] {file.filename}: Found {len(results)} faces")
