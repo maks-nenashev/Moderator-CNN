@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
+from app.services.cat_biometrics_service import CatBiometricsService
 from app.services.dog_biometrics_service import DogBiometricsService
 
 logger = logging.getLogger(__name__)
@@ -8,12 +9,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _dog_biometrics_service: DogBiometricsService | None = None
+_cat_biometrics_service: CatBiometricsService | None = None
 
 
 def get_dog_service() -> DogBiometricsService:
     """
-    Синглтон-провайдер: приоритетно переиспользует единый экземпляр dog_service из app.main,
-    избегая повторной загрузки весов в VRAM/RAM и расхождения путей к чекпоинтам.
+    Синглтон-провайдер для собак: приоритетно переиспользует dog_service из app.main,
+    избегая повторной загрузки весов в VRAM/RAM.
     """
     global _dog_biometrics_service
     if _dog_biometrics_service is not None:
@@ -41,7 +43,42 @@ def get_dog_service() -> DogBiometricsService:
         raise RuntimeError(f"Failed to initialize DogBiometricsService: {e}")
 
 
-# Двойной роутинг для полного соответствия контракту Rails
+def get_cat_service() -> CatBiometricsService:
+    """
+    Синглтон-провайдер для кошек: приоритетно переиспользует cat_service из app.main,
+    избегая повторной загрузки весов в VRAM/RAM.
+    """
+    global _cat_biometrics_service
+    if _cat_biometrics_service is not None:
+        return _cat_biometrics_service
+
+    # 1. Попытка переиспользовать уже инициализированный экземпляр из app.main
+    try:
+        from app.main import cat_service
+        if cat_service is not None:
+            _cat_biometrics_service = cat_service
+            return _cat_biometrics_service
+    except ImportError:
+        logger.warning("⚠️ Не удалось импортировать cat_service из app.main, переход к фолбэку")
+
+    # 2. Фолбэк: ленивая инициализация из конфигурации
+    try:
+        from app.core.config import CAT_EMBEDDER_WEIGHTS, CAT_YOLO_WEIGHTS
+        _cat_biometrics_service = CatBiometricsService(
+            embedder_weights_path=str(CAT_EMBEDDER_WEIGHTS),
+            yolo_weights_path=str(CAT_YOLO_WEIGHTS),
+        )
+        return _cat_biometrics_service
+    except Exception:
+        # Фолбэк на дефолтную инициализацию CatBiometricsService, если веса в config не объявлены
+        _cat_biometrics_service = CatBiometricsService()
+        return _cat_biometrics_service
+
+
+# =====================================================================
+# DOG EMBEDDING ENDPOINTS
+# =====================================================================
+
 @router.post("/dog/embedding")
 @router.post("/biometrics/dog/embedding")
 async def get_dog_embedding(file: UploadFile = File(...)):
@@ -55,7 +92,7 @@ async def get_dog_embedding(file: UploadFile = File(...)):
         status_code = result.get("status", "error")
 
         if status_code != "success":
-            logger.warning(f"⚠️ [FASTAPI] Detector rejected: {status_code}")
+            logger.warning(f"⚠️ [FASTAPI DOG] Detector rejected: {status_code}")
             return {
                 "status": status_code,
                 "embedding": None,
@@ -64,7 +101,7 @@ async def get_dog_embedding(file: UploadFile = File(...)):
             }
 
         logger.info(
-            f"✅ [FASTAPI] Success | BBox: {result['bbox']} | Conf: {result['confidence']}"
+            f"✅ [FASTAPI DOG] Success | BBox: {result['bbox']} | Conf: {result['confidence']}"
         )
 
         return {
@@ -75,8 +112,52 @@ async def get_dog_embedding(file: UploadFile = File(...)):
         }
 
     except Exception as e:
-        logger.error(f"❌ [FASTAPI] Exception: {str(e)}", exc_info=True)
+        logger.error(f"❌ [FASTAPI DOG] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Biometrics engine failed: {str(e)}",
+            detail=f"Dog biometrics engine failed: {str(e)}",
+        )
+
+
+# =====================================================================
+# CAT EMBEDDING ENDPOINTS
+# =====================================================================
+
+@router.post("/cat/embedding")
+@router.post("/biometrics/cat/embedding")
+async def get_cat_embedding(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        logger.info(f"📥 [FASTAPI /cat/embedding] Processing: {file.filename}")
+
+        service = get_cat_service()
+        result = service.process_image(image_bytes)
+
+        status_code = result.get("status", "error")
+
+        if status_code != "success":
+            logger.warning(f"⚠️ [FASTAPI CAT] Detector rejected: {status_code}")
+            return {
+                "status": status_code,
+                "embedding": None,
+                "bbox": None,
+                "confidence": result.get("confidence", 0.0),
+            }
+
+        logger.info(
+            f"✅ [FASTAPI CAT] Success | BBox: {result['bbox']} | Conf: {result['confidence']}"
+        )
+
+        return {
+            "status": "success",
+            "embedding": result["embedding"],
+            "bbox": result["bbox"],
+            "confidence": result["confidence"],
+        }
+
+    except Exception as e:
+        logger.error(f"❌ [FASTAPI CAT] Exception: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cat biometrics engine failed: {str(e)}",
         )
