@@ -5,12 +5,11 @@ import torch
 from torchvision import transforms
 from ultralytics import YOLO
 
-from app.models.dog_biometrics import DogBiometricNet
+from app.models.cat_biometrics import CatBiometricNet
 
 logger = logging.getLogger(__name__)
 
-# Рабочий порог L2 для DINOv2 (будет уточнен по результатам бенчмарка)
-MATCH_THRESHOLD = 0.75
+MATCH_THRESHOLD = 0.65
 
 
 def pad_to_square(image: Image.Image) -> Image.Image:
@@ -22,6 +21,7 @@ def pad_to_square(image: Image.Image) -> Image.Image:
     return ImageOps.expand(image, padding, fill=(0, 0, 0))
 
 
+# ViT-S/14 требует размер строго (224, 224) и стандартную нормализацию ImageNet
 INFERENCE_TRANSFORMS = transforms.Compose([
     transforms.Lambda(pad_to_square),
     transforms.Resize((224, 224)),
@@ -32,22 +32,20 @@ INFERENCE_TRANSFORMS = transforms.Compose([
 ])
 
 
-class DogBiometricsService:
+class CatBiometricsService:
 
     def __init__(
         self,
         embedder_weights_path: str = None,
-        yolo_weights_path: str = "/home/maks/Moderator-CNN/models/dog/dog_yolo_dual.pt",
+        yolo_weights_path: str = "/home/maks/Moderator-CNN/models/cat/cat_yolo.pt",
         device: str = None,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.yolo_model = YOLO(yolo_weights_path)
-        self.embedder = DogBiometricNet().to(self.device)
+        self.embedder = CatBiometricNet().to(self.device)
         self.embedder.eval()
 
-    def process_image(
-        self, image_bytes: bytes, conf_threshold: float = 0.35
-    ) -> dict:
+    def process_image(self, image_bytes: bytes, conf_threshold: float = 0.35) -> dict:
         try:
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image = ImageOps.exif_transpose(image)
@@ -59,12 +57,7 @@ class DogBiometricsService:
         boxes = results[0].boxes
 
         if len(boxes) == 0:
-            return {
-                "status": "no_dog_detected",
-                "embedding": None,
-                "bbox": None,
-                "confidence": 0.0,
-            }
+            return {"status": "no_cat_detected", "embedding": None, "bbox": None, "confidence": 0.0}
 
         best_box = max(boxes, key=lambda b: float(b.conf[0]))
         conf = float(best_box.conf[0])
@@ -89,11 +82,4 @@ class DogBiometricsService:
             "bbox": {"x": x1_s, "y": y1_s, "w": x2_s - x1_s, "h": y2_s - y1_s},
             "confidence": round(conf, 4),
         }
-
-    def predict_embedding(
-        self, image_bytes: bytes, bbox: list[int] = None
-    ) -> dict:
-        return self.process_image(image_bytes)
-
-
-dog_service = DogBiometricsService()
+cat_biometrics_service = CatBiometricsService()
