@@ -4,6 +4,12 @@ data/train/
 data/val/
 data/test/
 dataset.yaml
+datasets/
+debug_horse_crops/
+*.jpg
+*.jpeg
+*.png
+*.webp
 
 # Python & Environment
 __pycache__/
@@ -22,9 +28,16 @@ weights/
 runs/
 models/dog/
 
+# Кэши индексов и временные сериализованные файлы
+*.pkl
+gallery_index.pkl
+
 # Images & Temp Files
 *.jpg
 *.jpeg
 *.png
 tmp/
 tmp_*
+
+# (Опционально) Тяжелые веса моделей, если они распространяются отдельно
+# *.pt
