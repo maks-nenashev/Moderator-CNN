@@ -1,8 +1,10 @@
+import io
 import logging
 import shutil
 import tempfile
 from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from PIL import Image
 
 from app.services.cat_biometrics_service import CatBiometricsService
 from app.services.dog_biometrics_service import DogBiometricsService
@@ -68,9 +70,6 @@ def get_cat_service() -> CatBiometricsService:
 
 
 def get_horse_service() -> HorseCascadeService:
-    """
-    Синглтон-провайдер для лошадей: переиспользует horse_service из app.main.
-    """
     global _horse_biometrics_service
     if _horse_biometrics_service is not None:
         return _horse_biometrics_service
@@ -185,64 +184,99 @@ async def get_cat_embedding(file: UploadFile = File(...)):
 
 
 # =====================================================================
-# HORSE BIOMETRICS ENDPOINTS
+# HORSE EMBEDDING & SEARCH ENDPOINTS
 # =====================================================================
 
-@router.post("/horse/enroll/{horse_id}")
-@router.post("/biometrics/horse/enroll/{horse_id}")
-async def enroll_horse_image(horse_id: str, file: UploadFile = File(...)):
+@router.post("/horse/embedding")
+@router.post("/biometrics/horse/embedding")
+async def get_horse_embedding(file: UploadFile = File(...)):
     try:
-        service = get_horse_service()
-        suffix = Path(file.filename).suffix or ".jpg"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = tmp.name
+        image_bytes = await file.read()
+        logger.info(f"📥 [FASTAPI /horse/embedding] Processing: {file.filename}")
 
         try:
-            success = service.enroll_horse(horse_id, tmp_path)
-            if not success:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Голова лошади не обнаружена на снимке"
-                )
-            return {"status": "SUCCESS", "horse_id": horse_id, "filename": file.filename}
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid image format: {e}"
+            )
+
+        service = get_horse_service()
+
+        # Разрешение детектора из сервиса или фолбэк на YOLO
+        detector = getattr(service, "detector", None)
+        if detector is None and hasattr(service, "pipeline"):
+            detector = getattr(service.pipeline, "detector", None)
+        if detector is None:
+            from ultralytics import YOLO
+            from app.main import HORSE_YOLO_WEIGHTS
+            detector = YOLO(str(HORSE_YOLO_WEIGHTS))
+
+        # 1. Детекция головы лошади
+        img_w, img_h = image.size
+        results = detector(image, conf=0.35, verbose=False)
+        boxes = results[0].boxes
+
+        if len(boxes) == 0:
+            logger.warning("⚠️ [FASTAPI HORSE] No horse head detected")
+            return {
+                "status": "no_horse_detected",
+                "embedding": None,
+                "bbox": None,
+                "confidence": 0.0,
+            }
+
+        best_box = max(boxes, key=lambda b: float(b.conf[0]))
+        conf = float(best_box.conf[0])
+        x1, y1, x2, y2 = map(int, best_box.xyxy[0].tolist())
+
+        # 2. Tight Crop (15% margin)
+        w, h = x2 - x1, y2 - y1
+        margin_w, margin_h = int(w * 0.15), int(h * 0.15)
+        x1_c = max(0, x1 + margin_w)
+        y1_c = max(0, y1 + margin_h)
+        x2_c = min(img_w, x2 - margin_w)
+        y2_c = min(img_h, y2 - margin_h)
+
+        cropped_image = image.crop((x1_c, y1_c, x2_c, y2_c))
+
+        # 3. Передача PIL.Image в DINOv2 Vector Service
+        if hasattr(service, "vector_service"):
+            vector_engine = service.vector_service
+        elif hasattr(service, "pipeline") and hasattr(service.pipeline, "vector_service"):
+            vector_engine = service.pipeline.vector_service
+        else:
+            raise AttributeError("Horse biometrics service missing vector_service instance")
+
+# 3. Извлечение 384D эмбеддинга DINOv2
+        raw_embedding = vector_engine.extract_embedding(cropped_image)
+
+        # Безопасная приведение к единому float-списку (поддержка Tensor, ndarray, list)
+        if hasattr(raw_embedding, "detach"):
+            raw_embedding = raw_embedding.detach().cpu().numpy()
+
+        if hasattr(raw_embedding, "flatten"):
+            embedding = raw_embedding.flatten().tolist()
+        elif isinstance(raw_embedding, (list, tuple)):
+            embedding = [float(x) for x in raw_embedding]
+        else:
+            embedding = list(raw_embedding)
+
+        logger.info(f"✅ [FASTAPI HORSE] Success | Conf: {round(conf, 4)}")
+
+        return {
+            "status": "success",
+            "embedding": embedding,
+            "bbox": {"x": x1_c, "y": y1_c, "w": x2_c - x1_c, "h": y2_c - y1_c},
+            "confidence": round(conf, 4),
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [FASTAPI HORSE ENROLL] Exception: {str(e)}", exc_info=True)
+        logger.error(f"❌ [FASTAPI HORSE EMBEDDING] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Horse enrollment failed: {str(e)}",
-        )
-
-
-@router.post("/horse/search")
-@router.post("/biometrics/horse/search")
-async def search_horse(file: UploadFile = File(...)):
-    try:
-        service = get_horse_service()
-        suffix = Path(file.filename).suffix or ".jpg"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = tmp.name
-
-        try:
-            result = service.search_1_to_n(tmp_path)
-            if result.get("status") == "ERROR":
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=result.get("message")
-                )
-            return result
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ [FASTAPI HORSE SEARCH] Exception: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Horse biometrics search failed: {str(e)}",
+            detail=f"Horse biometrics embedding engine failed: {str(e)}",
         )
