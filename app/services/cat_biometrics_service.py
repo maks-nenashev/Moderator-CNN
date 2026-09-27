@@ -1,5 +1,7 @@
 import io
 import logging
+import os
+from pathlib import Path
 from PIL import Image, ImageOps
 import torch
 from torchvision import transforms
@@ -8,6 +10,10 @@ from ultralytics import YOLO
 from app.models.cat_biometrics import CatBiometricNet
 
 logger = logging.getLogger(__name__)
+
+# Автоматическое определение корня проекта (/app в Docker)
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_YOLO_PATH = BASE_DIR / "models" / "cat" / "cat_yolo.pt"
 
 MATCH_THRESHOLD = 0.65
 
@@ -21,7 +27,6 @@ def pad_to_square(image: Image.Image) -> Image.Image:
     return ImageOps.expand(image, padding, fill=(0, 0, 0))
 
 
-# ViT-S/14 требует размер строго (224, 224) и стандартную нормализацию ImageNet
 INFERENCE_TRANSFORMS = transforms.Compose([
     transforms.Lambda(pad_to_square),
     transforms.Resize((224, 224)),
@@ -37,11 +42,18 @@ class CatBiometricsService:
     def __init__(
         self,
         embedder_weights_path: str = None,
-        yolo_weights_path: str = "/home/maks/Moderator-CNN/models/cat/cat_yolo.pt",
+        yolo_weights_path: str | Path = None,
         device: str = None,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.yolo_model = YOLO(yolo_weights_path)
+        
+        # Разрешение пути: переданный параметр -> ENV -> дефолтный Path
+        weights_path = yolo_weights_path or os.getenv("CAT_YOLO_PATH", DEFAULT_YOLO_PATH)
+        
+        if not Path(weights_path).exists():
+            raise FileNotFoundError(f"Cat YOLO weights not found at: {weights_path}")
+            
+        self.yolo_model = YOLO(str(weights_path))
         self.embedder = CatBiometricNet().to(self.device)
         self.embedder.eval()
 
@@ -82,4 +94,6 @@ class CatBiometricsService:
             "bbox": {"x": x1_s, "y": y1_s, "w": x2_s - x1_s, "h": y2_s - y1_s},
             "confidence": round(conf, 4),
         }
+
+
 cat_biometrics_service = CatBiometricsService()

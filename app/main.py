@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 
-# Подавление системных предупреждений PyTorch/DINOv2/MobileSAM (xFormers/SwiGLU/Registry)
+# Подавление предупреждений xFormers / DINOv2 / MobileSAM
 warnings.filterwarnings("ignore", category=UserWarning, module="dinov2")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*xFormers.*")
 warnings.filterwarnings("ignore", category=UserWarning, module=".*mobile_sam.*")
@@ -23,23 +23,34 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WEIGHTS_DIR = BASE_DIR / "weights"
 MODELS_DIR = BASE_DIR / "models"
 
-MODERATOR_WEIGHTS = MODELS_DIR / "dog" / "moderator_v1.pth"
+# Целевой и legacy-пути весов модератора
+MODERATOR_WEIGHTS = MODELS_DIR / "content_safety" / "moderator_v1.pth"
+LEGACY_MODERATOR_WEIGHTS = MODELS_DIR / "dog" / "moderator_v1.pth"
+
 DOG_YOLO_WEIGHTS = MODELS_DIR / "dog" / "dog_yolo_dual.pt"
 CAT_YOLO_WEIGHTS = MODELS_DIR / "cat" / "cat_yolo.pt"
 HORSE_YOLO_WEIGHTS = MODELS_DIR / "horse" / "yolov8_horse_head.pt"
 
-# --- Блок 1: Модерация ---
-CLASSES = ["explicit", "safe", "violence"]
+# --- Блок 1: Модерация Контента ---
+CLASSES = ["explicit", "safe"]
 model = models.efficientnet_b0()
 num_ftrs = model.classifier[1].in_features
 model.classifier[1] = nn.Linear(num_ftrs, len(CLASSES))
 
+# Разрешение пути к весам модератора
 if MODERATOR_WEIGHTS.exists():
-    model.load_state_dict(torch.load(MODERATOR_WEIGHTS, map_location="cpu"))
-    model.eval()
-    print(f"✅ Moderator Model SUCCESS: Loaded from {MODERATOR_WEIGHTS}")
+    active_weights = MODERATOR_WEIGHTS
+elif LEGACY_MODERATOR_WEIGHTS.exists():
+    active_weights = LEGACY_MODERATOR_WEIGHTS
+    print(f"⚠️ Legacy Warning: Использование устаревшего пути весов {LEGACY_MODERATOR_WEIGHTS}")
 else:
-    raise RuntimeError(f"Cannot start Moderator without weights: {MODERATOR_WEIGHTS}")
+    raise RuntimeError(
+        f"Критическая ошибка: Веса модератора не найдены ни в {MODERATOR_WEIGHTS}, ни в {LEGACY_MODERATOR_WEIGHTS}"
+    )
+
+model.load_state_dict(torch.load(active_weights, map_location="cpu"))
+model.eval()
+print(f"✅ Moderator Model SUCCESS: Loaded from {active_weights}")
 
 # --- Блок 2: Человеческая биометрия ---
 try:
@@ -76,9 +87,8 @@ try:
 except Exception as e:
     print(f"❌ Horse Biometrics Engine Error: {e}")
 
-# --- Подключение ЕДИНОГО роутера биометрии ---
+# Подключение единого роутера биометрии
 from app.api.v1.endpoints.biometrics import router as biometrics_router
-
 app.include_router(biometrics_router, prefix="/api/v1", tags=["Biometrics"])
 
 preprocess = transforms.Compose([
@@ -97,13 +107,18 @@ async def moderate_image(file: UploadFile = File(...)):
         with torch.no_grad():
             features = model.features(input_tensor)
             pooled_features = model.avgpool(features)
-            embedding = torch.flatten(pooled_features, 1).cpu().numpy().tolist()[0][:512]
-            outputs = model.classifier(torch.flatten(pooled_features, 1))
+            flattened = torch.flatten(pooled_features, 1)
+            
+            # Извлечение первых 512 измерений эмбеддинга
+            embedding = flattened.cpu().numpy().tolist()[0][:512]
+            
+            outputs = model.classifier(flattened)
             probs = torch.nn.functional.softmax(outputs[0], dim=0)
             confidence, class_idx = torch.max(probs, 0)
 
         verdict = CLASSES[class_idx.item()]
         conf_value = float(confidence.item())
+        
         status = "allowed"
         if verdict != "safe":
             status = "blocked" if conf_value > 0.90 else "manual_review"

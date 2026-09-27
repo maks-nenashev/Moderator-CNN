@@ -5,13 +5,12 @@ services:
     build: .
     container_name: cnn_moderator
     ports:
-      - "8001:8001"
+      - "8001:8000"
     volumes:
       - ./weights:/app/weights
       - ./data:/app/data
     restart: always
 
-# Elasticsearch service configuration
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: findway_elasticsearch
@@ -19,13 +18,13 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms1g -Xmx1g" # Set the initial and maximum heap size for Elasticsearch to 1 GB
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
     ports:
       - "9200:9200"
     deploy:
       resources:
         limits:
-          memory: 2G # Limit Docker-container memory usage to 2 GB
+          memory: 2G
     logging:
       driver: "json-file"
       options:

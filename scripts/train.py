@@ -1,22 +1,41 @@
+import os
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
-from pathlib import Path
+from torchvision import datasets, transforms, models
+from PIL import Image
 
-# Конфигурация
-DATA_DIR = Path("data/train")
-WEIGHTS_DIR = Path("weights")
+# 1. Абсолютный расчет корня проекта (/home/maks/Moderator-CNN)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# 2. Изолированные пути домена Content Safety
+DATA_DIR = BASE_DIR / "data" / "train"
+SAVE_DIR = BASE_DIR / "models" / "content_safety"
+SAVE_PATH = SAVE_DIR / "moderator_v1.pth"
+
 BATCH_SIZE = 8
 EPOCHS = 5
-LEARNING_RATE = 0.001
+LEARNING_RATE = 1e-4
 
 def train():
-    WEIGHTS_DIR.mkdir(exist_ok=True)
+    SAVE_DIR.mkdir(parents=True, exist_ok=True)
     
-    # 1. Подготовка данных
+    if not DATA_DIR.exists():
+        raise FileNotFoundError(f"Каталог данных не найден: {DATA_DIR}")
+        
+    # Валидация наличия файлов в категориях
+    for class_dir in DATA_DIR.iterdir():
+        if class_dir.is_dir():
+            valid_files = [f for f in class_dir.iterdir() if f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.webp']]
+            if not valid_files:
+                print(f"⚠️ Класс {class_dir.name} пуст. Создание заглушки placeholder.jpg")
+                Image.new('RGB', (224, 224), color='black').save(class_dir / "placeholder.jpg")
+
+    # Предобработка
     transform = transforms.Compose([
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
@@ -25,24 +44,28 @@ def train():
     train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
     num_classes = len(dataset.classes)
     
-    print(f"✅ Данные загружены. Классы: {dataset.classes}")
+    print(f"✅ Датасет загружен. Классы ({num_classes}): {dataset.class_to_idx}")
     
-    # 2. Инициализация модели (EfficientNet-B0)
+    # Инициализация EfficientNet-B0
     model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-    
-    # Заменяем классификатор под наше количество классов
     num_ftrs = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(num_ftrs, num_classes)
     
-    device = torch.device("cpu") # Обучаем на CPU
+    # Подгрузка предыдущего чекпоинта из правильной директории
+    if SAVE_PATH.exists():
+        print(f"🔄 Загрузка чекпоинта модератора: {SAVE_PATH}")
+        try:
+            model.load_state_dict(torch.load(SAVE_PATH, map_location="cpu"))
+        except Exception as e:
+            print(f"⚠️ Ошибка загрузки чекпоинта, старт с ImageNet: {e}")
+
+    device = torch.device("cpu")
     model.to(device)
     
-    # 3. Функция потерь и оптимизатор
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
-    # 4. Цикл обучения
-    print("🚀 Старт обучения...")
+    print("🚀 Старт обучения модератора контента...")
     model.train()
     
     for epoch in range(EPOCHS):
@@ -55,14 +78,14 @@ def train():
             optimizer.step()
             
             running_loss += loss.item()
-            if (i + 1) % 5 == 0:
+            if (i + 1) % 5 == 0 or (i + 1) == len(train_loader):
                 print(f"Эпоха [{epoch+1}/{EPOCHS}], Батч [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
         
         print(f"📊 Итог эпохи {epoch+1}: Средний Loss: {running_loss/len(train_loader):.4f}")
 
-    # 5. Сохранение весов
-    torch.save(model.state_dict(), WEIGHTS_DIR / "moderator_v1.pth")
-    print(f"💾 Модель сохранена в {WEIGHTS_DIR}/moderator_v1.pth")
+    # Сохранение весов в models/content_safety/moderator_v1.pth
+    torch.save(model.state_dict(), SAVE_PATH)
+    print(f"💾 Модель сохранена в: {SAVE_PATH}")
 
 if __name__ == "__main__":
     train()

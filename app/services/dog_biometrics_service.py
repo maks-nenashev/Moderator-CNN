@@ -1,5 +1,7 @@
 import io
 import logging
+import os
+from pathlib import Path
 from PIL import Image, ImageOps
 import torch
 from torchvision import transforms
@@ -9,7 +11,9 @@ from app.models.dog_biometrics import DogBiometricNet
 
 logger = logging.getLogger(__name__)
 
-# Рабочий порог L2 для DINOv2 (будет уточнен по результатам бенчмарка)
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_YOLO_PATH = BASE_DIR / "models" / "dog" / "dog_yolo_dual.pt"
+
 MATCH_THRESHOLD = 0.75
 
 
@@ -37,11 +41,17 @@ class DogBiometricsService:
     def __init__(
         self,
         embedder_weights_path: str = None,
-        yolo_weights_path: str = "/home/maks/Moderator-CNN/models/dog/dog_yolo_dual.pt",
+        yolo_weights_path: str | Path = None,
         device: str = None,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.yolo_model = YOLO(yolo_weights_path)
+        
+        weights_path = yolo_weights_path or os.getenv("DOG_YOLO_PATH", DEFAULT_YOLO_PATH)
+        
+        if not Path(weights_path).exists():
+            raise FileNotFoundError(f"Dog YOLO weights not found at: {weights_path}")
+
+        self.yolo_model = YOLO(str(weights_path))
         self.embedder = DogBiometricNet().to(self.device)
         self.embedder.eval()
 

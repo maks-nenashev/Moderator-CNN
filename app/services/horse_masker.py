@@ -1,14 +1,25 @@
+import os
+from pathlib import Path
 import torch
 import numpy as np
 import cv2
 from PIL import Image
 from mobile_sam import sam_model_registry, SamPredictor
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_SAM_PATH = BASE_DIR / "models" / "horse" / "mobile_sam.pt"
+
 
 class HorseMasker:
-    def __init__(self, checkpoint_path: str = "/home/maks/Moderator-CNN/models/horse/mobile_sam.pt"):
+    def __init__(self, checkpoint_path: str | Path = None):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        sam = sam_model_registry["vit_t"](checkpoint=checkpoint_path)
+        
+        resolved_path = checkpoint_path or os.getenv("HORSE_SAM_PATH", DEFAULT_SAM_PATH)
+        
+        if not Path(resolved_path).exists():
+            raise FileNotFoundError(f"MobileSAM checkpoint not found at: {resolved_path}")
+
+        sam = sam_model_registry["vit_t"](checkpoint=str(resolved_path))
         sam.to(device=self.device)
         sam.eval()
         self.predictor = SamPredictor(sam)
@@ -18,7 +29,6 @@ class HorseMasker:
         img_np = np.array(crop_image.convert("RGB"))
         h, w, _ = img_np.shape
 
-        # Ускорение инференса ViT за счет FP16/autocast
         with torch.cuda.amp.autocast(enabled=(self.device == "cuda")):
             self.predictor.set_image(img_np)
             input_point = np.array([[w // 2, h // 2]])
