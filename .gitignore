@@ -3,6 +3,13 @@ data/
 data/train/
 data/val/
 data/test/
+dataset.yaml
+datasets/
+debug_horse_crops/
+*.jpg
+*.jpeg
+*.png
+*.webp
 
 # Python & Environment
 __pycache__/
@@ -10,5 +17,27 @@ __pycache__/
 venv/
 .env
 
-# Model Weights
-weights/*.pth
+# Model Weights & Artifacts
+weights/
+*.pth
+*.pt
+*.onnx
+*.zip
+*.bin
+*.engine
+runs/
+models/dog/
+
+# Кэши индексов и временные сериализованные файлы
+*.pkl
+gallery_index.pkl
+
+# Images & Temp Files
+*.jpg
+*.jpeg
+*.png
+tmp/
+tmp_*
+
+# (Опционально) Тяжелые веса моделей, если они распространяются отдельно
+# *.pt
