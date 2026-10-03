@@ -1,8 +1,10 @@
+import asyncio
 import io
 import logging
 import shutil
 import tempfile
 from pathlib import Path
+from functools import partial
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from PIL import Image
 
@@ -99,7 +101,9 @@ def get_horse_service() -> HorseCascadeService:
 # DOG EMBEDDING ENDPOINTS
 # =====================================================================
 
+@router.post("/dog")
 @router.post("/dog/embedding")
+@router.post("/biometrics/dog")
 @router.post("/biometrics/dog/embedding")
 async def get_dog_embedding(file: UploadFile = File(...)):
     try:
@@ -107,7 +111,8 @@ async def get_dog_embedding(file: UploadFile = File(...)):
         logger.info(f"📥 [FASTAPI /dog/embedding] Processing: {file.filename}")
 
         service = get_dog_service()
-        result = service.process_image(image_bytes)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, service.process_image, image_bytes)
 
         status_code = result.get("status", "error")
 
@@ -143,7 +148,9 @@ async def get_dog_embedding(file: UploadFile = File(...)):
 # CAT EMBEDDING ENDPOINTS
 # =====================================================================
 
+@router.post("/cat")
 @router.post("/cat/embedding")
+@router.post("/biometrics/cat")
 @router.post("/biometrics/cat/embedding")
 async def get_cat_embedding(file: UploadFile = File(...)):
     try:
@@ -151,7 +158,8 @@ async def get_cat_embedding(file: UploadFile = File(...)):
         logger.info(f"📥 [FASTAPI /cat/embedding] Processing: {file.filename}")
 
         service = get_cat_service()
-        result = service.process_image(image_bytes)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, service.process_image, image_bytes)
 
         status_code = result.get("status", "error")
 
@@ -187,90 +195,92 @@ async def get_cat_embedding(file: UploadFile = File(...)):
 # HORSE EMBEDDING & SEARCH ENDPOINTS
 # =====================================================================
 
+def _process_horse_pipeline(image_bytes: bytes, service: HorseCascadeService) -> dict:
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    detector = getattr(service, "detector", None)
+    if detector is None and hasattr(service, "pipeline"):
+        detector = getattr(service.pipeline, "detector", None)
+    if detector is None:
+        from ultralytics import YOLO
+        from app.main import HORSE_YOLO_WEIGHTS
+        detector = YOLO(str(HORSE_YOLO_WEIGHTS))
+
+    img_w, img_h = image.size
+    results = detector(image, conf=0.35, verbose=False)
+    boxes = results[0].boxes
+
+    if len(boxes) == 0:
+        return {
+            "status": "no_horse_detected",
+            "embedding": None,
+            "bbox": None,
+            "confidence": 0.0,
+        }
+
+    best_box = max(boxes, key=lambda b: float(b.conf[0]))
+    conf = float(best_box.conf[0])
+    x1, y1, x2, y2 = map(int, best_box.xyxy[0].tolist())
+
+    w, h = x2 - x1, y2 - y1
+    margin_w, margin_h = int(w * 0.15), int(h * 0.15)
+    x1_c = max(0, x1 + margin_w)
+    y1_c = max(0, y1 + margin_h)
+    x2_c = min(img_w, x2 - margin_w)
+    y2_c = min(img_h, y2 - margin_h)
+
+    cropped_image = image.crop((x1_c, y1_c, x2_c, y2_c))
+
+    if hasattr(service, "vector_service"):
+        vector_engine = service.vector_service
+    elif hasattr(service, "pipeline") and hasattr(service.pipeline, "vector_service"):
+        vector_engine = service.pipeline.vector_service
+    else:
+        raise AttributeError("Horse biometrics service missing vector_service instance")
+
+    raw_embedding = vector_engine.extract_embedding(cropped_image)
+
+    if hasattr(raw_embedding, "detach"):
+        raw_embedding = raw_embedding.detach().cpu().numpy()
+
+    if hasattr(raw_embedding, "flatten"):
+        embedding = raw_embedding.flatten().tolist()
+    elif isinstance(raw_embedding, (list, tuple)):
+        embedding = [float(x) for x in raw_embedding]
+    else:
+        embedding = list(raw_embedding)
+
+    return {
+        "status": "success",
+        "embedding": embedding,
+        "bbox": {"x": x1_c, "y": y1_c, "w": x2_c - x1_c, "h": y2_c - y1_c},
+        "confidence": round(conf, 4),
+    }
+
+
+@router.post("/horse")
 @router.post("/horse/embedding")
+@router.post("/biometrics/horse")
 @router.post("/biometrics/horse/embedding")
 async def get_horse_embedding(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
         logger.info(f"📥 [FASTAPI /horse/embedding] Processing: {file.filename}")
 
-        try:
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid image format: {e}"
-            )
-
         service = get_horse_service()
+        loop = asyncio.get_running_loop()
+        
+        # Вызов тяжелого пайплайна в ThreadPool
+        result = await loop.run_in_executor(
+            None, partial(_process_horse_pipeline, image_bytes, service)
+        )
 
-        # Разрешение детектора из сервиса или фолбэк на YOLO
-        detector = getattr(service, "detector", None)
-        if detector is None and hasattr(service, "pipeline"):
-            detector = getattr(service.pipeline, "detector", None)
-        if detector is None:
-            from ultralytics import YOLO
-            from app.main import HORSE_YOLO_WEIGHTS
-            detector = YOLO(str(HORSE_YOLO_WEIGHTS))
-
-        # 1. Детекция головы лошади
-        img_w, img_h = image.size
-        results = detector(image, conf=0.35, verbose=False)
-        boxes = results[0].boxes
-
-        if len(boxes) == 0:
+        if result.get("status") == "no_horse_detected":
             logger.warning("⚠️ [FASTAPI HORSE] No horse head detected")
-            return {
-                "status": "no_horse_detected",
-                "embedding": None,
-                "bbox": None,
-                "confidence": 0.0,
-            }
+            return result
 
-        best_box = max(boxes, key=lambda b: float(b.conf[0]))
-        conf = float(best_box.conf[0])
-        x1, y1, x2, y2 = map(int, best_box.xyxy[0].tolist())
-
-        # 2. Tight Crop (15% margin)
-        w, h = x2 - x1, y2 - y1
-        margin_w, margin_h = int(w * 0.15), int(h * 0.15)
-        x1_c = max(0, x1 + margin_w)
-        y1_c = max(0, y1 + margin_h)
-        x2_c = min(img_w, x2 - margin_w)
-        y2_c = min(img_h, y2 - margin_h)
-
-        cropped_image = image.crop((x1_c, y1_c, x2_c, y2_c))
-
-        # 3. Передача PIL.Image в DINOv2 Vector Service
-        if hasattr(service, "vector_service"):
-            vector_engine = service.vector_service
-        elif hasattr(service, "pipeline") and hasattr(service.pipeline, "vector_service"):
-            vector_engine = service.pipeline.vector_service
-        else:
-            raise AttributeError("Horse biometrics service missing vector_service instance")
-
-# 3. Извлечение 384D эмбеддинга DINOv2
-        raw_embedding = vector_engine.extract_embedding(cropped_image)
-
-        # Безопасная приведение к единому float-списку (поддержка Tensor, ndarray, list)
-        if hasattr(raw_embedding, "detach"):
-            raw_embedding = raw_embedding.detach().cpu().numpy()
-
-        if hasattr(raw_embedding, "flatten"):
-            embedding = raw_embedding.flatten().tolist()
-        elif isinstance(raw_embedding, (list, tuple)):
-            embedding = [float(x) for x in raw_embedding]
-        else:
-            embedding = list(raw_embedding)
-
-        logger.info(f"✅ [FASTAPI HORSE] Success | Conf: {round(conf, 4)}")
-
-        return {
-            "status": "success",
-            "embedding": embedding,
-            "bbox": {"x": x1_c, "y": y1_c, "w": x2_c - x1_c, "h": y2_c - y1_c},
-            "confidence": round(conf, 4),
-        }
+        logger.info(f"✅ [FASTAPI HORSE] Success | Conf: {result.get('confidence')}")
+        return result
 
     except HTTPException:
         raise

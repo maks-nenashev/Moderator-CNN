@@ -1,3 +1,4 @@
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -8,9 +9,18 @@ from app.services.horse_cascade_service import HorseCascadeService
 
 router = APIRouter(prefix="/horse", tags=["Horse Biometrics"])
 
+# Расчет абсолютного пути от корня приложения (/app в контейнере или корень проекта локально)
+BASE_DIR = Path(__file__).resolve().parents[4]  # Корректируйте вложенность под структуру директорий
+DEFAULT_DETECTOR_PATH = BASE_DIR / "models" / "horse" / "yolov8_horse_head.pt"
+
+# Резолвинг пути: ENV -> локальный расчет относительно BASE_DIR -> относительный путь "models/..."
+DETECTOR_PATH = os.getenv("HORSE_DETECTOR_PATH", str(DEFAULT_DETECTOR_PATH))
+if not os.path.exists(DETECTOR_PATH):
+    DETECTOR_PATH = "models/horse/yolov8_horse_head.pt"
+
 # Сервис инициализируется единым синглтоном
 cascade_service = HorseCascadeService(
-    detector_path="/home/maks/Moderator-CNN/models/horse/yolov8_horse_head.pt",
+    detector_path=DETECTOR_PATH,
     top_k=3,
     match_threshold=14
 )

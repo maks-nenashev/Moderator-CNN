@@ -81,10 +81,11 @@ log_info "Waiting for ${CONTAINER_NAME} to initialize and pass healthcheck on po
 
 HEALTHY=false
 
+# Исправленный блок Phase 4 в скрипте деплоя
 HEALTH_CHECK_RESULT=$(ssh $SSH_OPTS "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<EOF
     for i in \$(seq 1 ${MAX_HEALTH_RETRIES}); do
-        STATUS=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/health || curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/ || echo "000")
-        if [ "\$STATUS" -eq 200 ] || [ "\$STATUS" -eq 302 ]; then
+        STATUS=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/docs || echo "000")
+        if [ "\$STATUS" -eq 200 ]; then
             echo "OK:\$STATUS"
             exit 0
         fi
